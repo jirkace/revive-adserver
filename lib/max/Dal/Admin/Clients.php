@@ -11,6 +11,7 @@
 */
 
 require_once MAX_PATH . '/lib/OA/Dal.php';
+require_once MAX_PATH . '/lib/OA/Dll.php';
 require_once MAX_PATH . '/lib/wact/db/db.inc.php';
 require_once MAX_PATH . '/lib/max/Dal/DataObjects/Clients.php';
 
@@ -88,12 +89,15 @@ class MAX_Dal_Admin_Clients extends MAX_Dal_Common
      * @param integer $agencyId       Optional. The agency ID to limit results to.
      * @param array $aIncludeSystemTypes an array of system types to be
      *              included apart from default advertisers
+     * @param bool    $activeOnly     Optional. Only return the active advertisers, i.e. the
+     *                                advertisers with at least one running or awaiting campaign
+     *                                that has at least one running or awaiting banner.
      *
      * @return array
      *
      * @todo Consider removing order options (or making them optional)
      */
-    public function getAllAdvertisers($listorder, $orderdirection, $agencyId = null, $aIncludeSystemTypes = [])
+    public function getAllAdvertisers($listorder, $orderdirection, $agencyId = null, $aIncludeSystemTypes = [], $activeOnly = false)
     {
         $aIncludeSystemTypes = array_merge(
             [DataObjects_Clients::ADVERTISER_TYPE_DEFAULT],
@@ -105,6 +109,9 @@ class MAX_Dal_Admin_Clients extends MAX_Dal_Common
             $doClients->agencyid = $agencyId;
         }
         $doClients->whereInAdd('type', $aIncludeSystemTypes);
+        if ($activeOnly) {
+            $doClients->whereAdd($this->_getActiveAdvertiserCondition($doClients->tableName()));
+        }
         $doClients->orderBy('(type=' . DataObjects_Clients::ADVERTISER_TYPE_DEFAULT . ') ASC');
         $doClients->addListOrderBy($listorder, $orderdirection);
         return $doClients->getAll(['clientname', 'type', 'updated'], $indexWitkPk = true, $flatten = false);
@@ -120,8 +127,35 @@ class MAX_Dal_Admin_Clients extends MAX_Dal_Common
      * @todo Update to MAX DB API
      * @todo Consider removing order options (or making them optional)
      */
-    public function getAllAdvertisersForAgency($agency_id, $listorder = 'name', $orderdirection = 'up', $aIncludeSystemTypes = [])
+    public function getAllAdvertisersForAgency($agency_id, $listorder = 'name', $orderdirection = 'up', $aIncludeSystemTypes = [], $activeOnly = false)
     {
-        return $this->getAllAdvertisers($listorder, $orderdirection, $agency_id, $aIncludeSystemTypes);
+        return $this->getAllAdvertisers($listorder, $orderdirection, $agency_id, $aIncludeSystemTypes, $activeOnly);
+    }
+
+    /**
+     * Returns an SQL condition matching the advertisers with at least one
+     * running or awaiting campaign that has at least one running or awaiting
+     * banner.
+     *
+     * @param string $tableClients The name of the clients table in the query
+     * @return string
+     */
+    private function _getActiveAdvertiserCondition($tableClients)
+    {
+        $tableM = $this->oDbh->quoteIdentifier($this->prefix . 'campaigns', true);
+        $tableB = $this->oDbh->quoteIdentifier($this->prefix . 'banners', true);
+        $activeStatuses = OA_ENTITY_STATUS_RUNNING . ', ' . OA_ENTITY_STATUS_AWAITING;
+
+        return "EXISTS (
+            SELECT 1
+            FROM {$tableM} AS m
+            WHERE m.clientid = {$tableClients}.clientid
+                AND m.status IN ({$activeStatuses})
+                AND EXISTS (
+                    SELECT 1
+                    FROM {$tableB} AS b
+                    WHERE b.campaignid = m.campaignid AND b.status IN ({$activeStatuses})
+                )
+        )";
     }
 }

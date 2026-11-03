@@ -12,6 +12,7 @@
 
 require_once MAX_PATH . '/lib/OA/Dal.php';
 require_once MAX_PATH . '/lib/max/Dal/tests/util/DalUnitTestCase.php';
+require_once MAX_PATH . '/lib/OA/Dll.php';
 
 /**
  * A class for testing DAL Clients methods
@@ -355,5 +356,89 @@ class MAX_Dal_Admin_ClientsTest extends DalUnitTestCase
         $this->assertEqual($aClients[1]['type'], DataObjects_Clients::ADVERTISER_TYPE_DEFAULT);
 
         TestEnv::truncateAllTables();
+    }
+
+    /**
+     * A method to test the getAllAdvertisers() and getAllAdvertisersForAgency()
+     * methods with $activeOnly.
+     */
+    public function testGetAllAdvertisersActiveOnly()
+    {
+        $this->assertEqual($this->dalClients->getAllAdvertisers('name', 'up', null, [], true), []);
+
+        $aIds = $this->_generateActiveAndInactiveAdvertisers();
+
+        // All advertisers are returned without $activeOnly
+        $this->assertEqual(count($this->dalClients->getAllAdvertisersForAgency(1, 'name', 'up')), 5);
+
+        $aClients = $this->dalClients->getAllAdvertisersForAgency(1, 'id', 'up', [], true);
+        $this->assertIdentical(array_keys($aClients), [$aIds['active'], $aIds['awaiting']]);
+        $this->assertEqual(count($aClients[$aIds['active']]), 3);
+
+        $aClients = $this->dalClients->getAllAdvertisersForAgency(1, 'id', 'down', [], true);
+        $this->assertIdentical(array_keys($aClients), [$aIds['awaiting'], $aIds['active']]);
+
+        $aClients = $this->dalClients->getAllAdvertisersForAgency(2, 'id', 'up', [], true);
+        $this->assertIdentical(array_keys($aClients), [$aIds['otherAgency']]);
+
+        $aClients = $this->dalClients->getAllAdvertisers('id', 'up', null, [], true);
+        $this->assertIdentical(array_keys($aClients), [$aIds['active'], $aIds['awaiting'], $aIds['otherAgency']]);
+    }
+
+    /**
+     * Generates an advertiser with one campaign per element of $aCampaigns,
+     * each element being [campaign status, [banner statuses]].
+     *
+     * @return int The advertiser ID
+     */
+    private function _generateAdvertiser($agencyId, $aCampaigns = [])
+    {
+        $doClients = OA_Dal::factoryDO('clients');
+        $doClients->agencyid = $agencyId;
+        $doClients->reportlastdate = '2007-04-03 19:14:59';
+        $doClients->type = DataObjects_Clients::ADVERTISER_TYPE_DEFAULT;
+        $clientId = (int) DataGenerator::generateOne($doClients);
+
+        $oDbh = OA_DB::singleton();
+        $tableM = $oDbh->quoteIdentifier(OA_Dal::getTablePrefix() . 'campaigns', true);
+
+        foreach ($aCampaigns as [$campaignStatus, $aBannerStatuses]) {
+            $doCampaigns = OA_Dal::factoryDO('campaigns');
+            $doCampaigns->clientid = $clientId;
+            $campaignId = DataGenerator::generateOne($doCampaigns);
+
+            // Campaigns::insert() recalculates the status, set it explicitly
+            $oDbh->exec("UPDATE {$tableM} SET status = " . (int) $campaignStatus . " WHERE campaignid = " . (int) $campaignId);
+
+            foreach ($aBannerStatuses as $bannerStatus) {
+                $doBanners = OA_Dal::factoryDO('banners');
+                $doBanners->campaignid = $campaignId;
+                $doBanners->status = $bannerStatus;
+                $doBanners->acls_updated = '2007-04-03 18:39:45';
+                DataGenerator::generateOne($doBanners);
+            }
+        }
+
+        return $clientId;
+    }
+
+    /**
+     * Generates the advertisers used by the tests of the active advertisers.
+     *
+     * @return int[] The advertiser IDs keyed by a short description
+     */
+    private function _generateActiveAndInactiveAdvertisers()
+    {
+        return [
+            'active' => $this->_generateAdvertiser(1, [[OA_ENTITY_STATUS_RUNNING, [OA_ENTITY_STATUS_RUNNING]]]),
+            'pausedBanner' => $this->_generateAdvertiser(1, [[OA_ENTITY_STATUS_RUNNING, [OA_ENTITY_STATUS_PAUSED]]]),
+            'pausedCampaign' => $this->_generateAdvertiser(1, [[OA_ENTITY_STATUS_PAUSED, [OA_ENTITY_STATUS_RUNNING]]]),
+            'awaiting' => $this->_generateAdvertiser(1, [
+                [OA_ENTITY_STATUS_EXPIRED, [OA_ENTITY_STATUS_RUNNING]],
+                [OA_ENTITY_STATUS_AWAITING, [OA_ENTITY_STATUS_PAUSED, OA_ENTITY_STATUS_AWAITING]],
+            ]),
+            'noCampaigns' => $this->_generateAdvertiser(1),
+            'otherAgency' => $this->_generateAdvertiser(2, [[OA_ENTITY_STATUS_RUNNING, [OA_ENTITY_STATUS_RUNNING]]]),
+        ];
     }
 }
