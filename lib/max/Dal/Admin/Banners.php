@@ -175,7 +175,7 @@ class MAX_Dal_Admin_Banners extends MAX_Dal_Common
                 b.campaignid > 0
                 AND b.status IN (" . OA_ENTITY_STATUS_RUNNING . ", " . OA_ENTITY_STATUS_AWAITING . ")";
 
-        return array_map('intval', $this->oDbh->queryCol($query));
+        return array_map(intval(...), $this->oDbh->queryCol($query));
     }
 
 
