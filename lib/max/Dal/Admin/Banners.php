@@ -143,6 +143,41 @@ class MAX_Dal_Admin_Banners extends MAX_Dal_Common
         return $aBanners;
     }
 
+    /**
+     * Returns the IDs of the campaigns that have at least one running or
+     * awaiting banner.
+     *
+     * @param int|null $agencyId Only return campaigns of this agency, or
+     *                           campaigns of all agencies when null.
+     * @return int[]
+     */
+    public function getCampaignIdsWithActiveBanners($agencyId = null)
+    {
+        $tableB = $this->oDbh->quoteIdentifier($this->prefix . 'banners', true);
+
+        $query = "
+            SELECT DISTINCT
+                b.campaignid
+            FROM
+                {$tableB} AS b";
+
+        if (isset($agencyId)) {
+            $tableM = $this->oDbh->quoteIdentifier($this->prefix . 'campaigns', true);
+            $tableC = $this->oDbh->quoteIdentifier($this->prefix . 'clients', true);
+
+            $query .= "
+                JOIN {$tableM} AS m ON (m.campaignid = b.campaignid)
+                JOIN {$tableC} AS c ON (c.clientid = m.clientid AND c.agencyid = " . DBC::makeLiteral($agencyId) . ")";
+        }
+
+        $query .= "
+            WHERE
+                b.campaignid > 0
+                AND b.status IN (" . OA_ENTITY_STATUS_RUNNING . ", " . OA_ENTITY_STATUS_AWAITING . ")";
+
+        return array_map('intval', $this->oDbh->queryCol($query));
+    }
+
 
     /**
      * @param int $campaignid

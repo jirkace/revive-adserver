@@ -24,11 +24,6 @@ require_once MAX_PATH . '/lib/OX/Admin/UI/ViewHooks.php';
 
 require_once RV_PATH . '/lib/RV/Admin/DateTimeFormat.php';
 
-function _isBannerAssignedToCampaign($aBannerData)
-{
-    return $aBannerData['campaignid'] > 0;
-}
-
 // Register input variables
 phpAds_registerGlobal('hideinactive', 'listorder', 'orderdirection');
 
@@ -90,24 +85,20 @@ $dalCampaigns = OA_Dal::factoryDAL('campaigns');
 $dalBanners = OA_Dal::factoryDAL('banners');
 
 $campaigns = [];
-$banners = [];
+$aCampaignIdsWithActiveBanners = [];
 
 if (OA_Permission::isAccount(OA_ACCOUNT_ADMIN)) {
     $clients = $dalClients->getAllAdvertisers($listorder, $orderdirection);
     if ($hideinactive) {
         $campaigns = $dalCampaigns->getAllCampaigns($listorder, $orderdirection);
-        $banners = $dalBanners->getAllBanners($listorder, $orderdirection);
+        $aCampaignIdsWithActiveBanners = $dalBanners->getCampaignIdsWithActiveBanners();
     }
 } elseif (OA_Permission::isAccount(OA_ACCOUNT_MANAGER)) {
     $agency_id = OA_Permission::getEntityId();
     $clients = $dalClients->getAllAdvertisersForAgency($agency_id, $listorder, $orderdirection);
     if ($hideinactive) {
         $campaigns = $dalCampaigns->getAllCampaignsUnderAgency($agency_id, $listorder, $orderdirection);
-        $banners = $dalBanners->getAllBannersUnderAgency($agency_id, $listorder, $orderdirection);
-        foreach ($banners as &$banner) {
-            $banner['status'] = $banner['active'];
-        }
-        unset($banner);
+        $aCampaignIdsWithActiveBanners = $dalBanners->getCampaignIdsWithActiveBanners($agency_id);
     }
 }
 
@@ -125,16 +116,12 @@ $aCount = [
 ];
 
 
-if ($hideinactive && !empty($clients) && !empty($campaigns) && !empty($banners)) {
+if ($hideinactive && !empty($clients) && !empty($campaigns)) {
     // Inactive Advertisers should be hidden
-    foreach ($banners as $bkey => $banner) {
-        if (
-            _isBannerAssignedToCampaign($banner) &&
-            (OA_ENTITY_STATUS_RUNNING == $banner['status'] || OA_ENTITY_STATUS_AWAITING == $banner['status'])
-        ) {
-            // This Banner is in the Running or Awaiting state - update the list of
-            // Campaigns to record that this Campaign has an active Banner
-            $campaigns[$banner['campaignid']]['has_active_banners'] = true;
+    foreach ($aCampaignIdsWithActiveBanners as $campaignId) {
+        if (isset($campaigns[$campaignId])) {
+            // This Campaign has at least one Banner in the Running or Awaiting state
+            $campaigns[$campaignId]['has_active_banners'] = true;
         }
     }
     foreach ($campaigns as $ckey => $campaign) {

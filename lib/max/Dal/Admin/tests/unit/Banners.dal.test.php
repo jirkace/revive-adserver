@@ -86,6 +86,70 @@ class MAX_Dal_Admin_BannersTest extends DalUnitTestCase
         $this->assertEqual(count($aBanners), 1);
     }
 
+    public function testGetCampaignIdsWithActiveBanners()
+    {
+        // No banners at all
+        $this->assertEqual($this->dalBanners->getCampaignIdsWithActiveBanners(), []);
+        $this->assertEqual($this->dalBanners->getCampaignIdsWithActiveBanners(1), []);
+
+        // Agency 1: running, awaiting, paused and mixed banners
+        $campaignRunning = $this->_generateCampaign(1);
+        $this->_generateBanner($campaignRunning, OA_ENTITY_STATUS_RUNNING);
+        $this->_generateBanner($campaignRunning, OA_ENTITY_STATUS_RUNNING);
+
+        $campaignAwaiting = $this->_generateCampaign(1);
+        $this->_generateBanner($campaignAwaiting, OA_ENTITY_STATUS_PAUSED);
+        $this->_generateBanner($campaignAwaiting, OA_ENTITY_STATUS_AWAITING);
+
+        $campaignPaused = $this->_generateCampaign(1);
+        $this->_generateBanner($campaignPaused, OA_ENTITY_STATUS_PAUSED);
+
+        $this->_generateCampaign(1); // no banners
+
+        // Agency 2
+        $campaignOtherAgency = $this->_generateCampaign(2);
+        $this->_generateBanner($campaignOtherAgency, OA_ENTITY_STATUS_RUNNING);
+
+        // Running banner not linked to any campaign
+        $this->_generateBanner(0, OA_ENTITY_STATUS_RUNNING);
+
+        $aCampaignIds = $this->dalBanners->getCampaignIdsWithActiveBanners(1);
+        sort($aCampaignIds);
+        $this->assertIdentical($aCampaignIds, [$campaignRunning, $campaignAwaiting]);
+
+        $aCampaignIds = $this->dalBanners->getCampaignIdsWithActiveBanners(2);
+        $this->assertIdentical($aCampaignIds, [$campaignOtherAgency]);
+
+        $this->assertEqual($this->dalBanners->getCampaignIdsWithActiveBanners(3), []);
+
+        $aCampaignIds = $this->dalBanners->getCampaignIdsWithActiveBanners();
+        sort($aCampaignIds);
+        $this->assertIdentical($aCampaignIds, [$campaignRunning, $campaignAwaiting, $campaignOtherAgency]);
+    }
+
+    private function _generateCampaign($agencyId)
+    {
+        $doClients = OA_Dal::factoryDO('clients');
+        $doClients->agencyid = $agencyId;
+        $doClients->reportlastdate = '2007-04-03 18:39:45';
+        $clientId = DataGenerator::generateOne($doClients);
+
+        $doCampaigns = OA_Dal::factoryDO('campaigns');
+        $doCampaigns->clientid = $clientId;
+
+        return (int) DataGenerator::generateOne($doCampaigns);
+    }
+
+    private function _generateBanner($campaignId, $status)
+    {
+        $doBanners = OA_Dal::factoryDO('banners');
+        $doBanners->campaignid = $campaignId;
+        $doBanners->status = $status;
+        $doBanners->acls_updated = '2007-04-03 18:39:45';
+
+        return (int) DataGenerator::generateOne($doBanners);
+    }
+
 
     public function testGetAllBannersUnderCampaign()
     {
